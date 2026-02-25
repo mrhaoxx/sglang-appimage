@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=SGLang
+Exec=SGLang.AppImage
+Icon=sglang
+Categories=Development;Science;
+Terminal=true
