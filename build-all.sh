@@ -109,12 +109,14 @@ $DOCKER run --rm -t \
   -v "$PWD/.cache/python-appimage:/root/.cache/python-appimage" \
   -w /work \
   "$IMAGE" \
-  bash -lc '
+  bash -lxc '
     set -uo pipefail
     export TZ=UTC LC_ALL=C LANG=C
     export PIP_INDEX_URL='"${PYPI_INDEX}"'
     export PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
     export PIP_CACHE_DIR=/work/.cache/pip-cache
+    export https_proxy=http://192.168.200.14:17890
+    export no_proxy=".cn"
     mkdir -p ${PIP_CACHE_DIR}
     chown -R "$(id -u):$(id -g)" ${PIP_CACHE_DIR}
     unset SOURCE_DATE_EPOCH 2>/dev/null || true

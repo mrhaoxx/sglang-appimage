@@ -1,0 +1,233 @@
+name: Build SGLang AppImage
+
+on:
+  workflow_dispatch:
+    inputs:
+      sglang_ref:
+        description: "SGLang branch / tag / commit"
+        required: false
+        default: "main"
+      python_version:
+        description: "Python version (e.g. 3.11)"
+        required: false
+        default: "3.12"
+      r2_path_prefix:
+        description: "R2 upload path prefix"
+        required: false
+        default: "sglang-appimage"
+
+env:
+  IMAGE: sglang-appimage-builder
+  SGLANG_REPO: https://github.com/sgl-project/sglang.git
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      # ── 1) Checkout ──────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2) Free disk space ───────────────────────────────
+      - name: Free disk space
+        run: |
+          echo "=== Before cleanup ==="
+          df -h /
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo docker image prune -af || true
+          echo "=== After cleanup ==="
+          df -h /
+
+      # ── 3) Build Docker image ────────────────────────────
+      - name: Build Docker image
+        run: docker build -t "$IMAGE" -f docker/Dockerfile docker
+
+      # ── 4) Clone sglang source ───────────────────────────
+      - name: Clone sglang source
+        id: clone
+        run: |
+          SGLANG_REF="${{ inputs.sglang_ref }}"
+          git clone --depth 1 -b "$SGLANG_REF" "$SGLANG_REPO" .cache/sglang-src
+          SGLANG_COMMIT="$(git -C .cache/sglang-src rev-parse --short HEAD)"
+          echo "sglang_commit=$SGLANG_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Cloned sglang@${SGLANG_COMMIT}"
+
+      # ── 5) Build sglang wheel ────────────────────────────
+      - name: Build sglang wheel
+        run: |
+          PYTHON_SHORT="${{ inputs.python_version }}"
+          mkdir -p dist .cache/uv .cache/pip-cache .cache/python-appimage .cache/wheels
+
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            "$IMAGE" \
+            bash -lc "
+              set -euo pipefail
+
+              # Clean residual build artifacts
+              rm -rf /work/.cache/sglang-src/python/build/
+
+              echo '[build] pip wheel --no-deps ...'
+              pip wheel --no-deps -w /work/.cache/wheels /work/.cache/sglang-src/python/ 2>&1 | tail -5
+
+              WHEEL=\$(ls -t /work/.cache/wheels/sglang-*.whl | head -1)
+              WHEEL_NAME=\$(basename \"\${WHEEL}\")
+              cp -f \"\${WHEEL}\" /work/recipe/
+              echo \"[build] wheel: \${WHEEL_NAME}\"
+
+              echo \"/work/recipe/\${WHEEL_NAME}\" > /work/recipe/requirements.txt
+              echo '[build] requirements.txt:'
+              cat /work/recipe/requirements.txt
+            "
+
+      # ── 6) Download appimagetool + runtime (cached) ──────
+      - name: Cache appimagetool and runtime
+        id: cache-tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/runtime-x86_64
+            .cache/appimagetool-bin
+          key: appimagetool-runtime-v1
+
+      - name: Download appimagetool and runtime
+        if: steps.cache-tools.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .cache/appimagetool-bin
+
+          echo "Downloading runtime ..."
+          curl -fSL -o .cache/runtime-x86_64 \
+            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+
+          echo "Downloading appimagetool ..."
+          curl -fSL -o .cache/appimagetool-bin/appimagetool.real \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x .cache/appimagetool-bin/appimagetool.real
+
+      # ── 7) Build AppDir ──────────────────────────────────
+      - name: Build AppDir
+        run: |
+          PYTHON_SHORT="${{ inputs.python_version }}"
+          mkdir -p .cache/pip-cache
+
+          docker run --rm \
+            -v "$PWD:/work" \
+            -v "$PWD/.cache/python-appimage:/root/.cache/python-appimage" \
+            -w /work \
+            "$IMAGE" \
+            bash -lxc '
+              set -uo pipefail
+              export TZ=UTC LC_ALL=C LANG=C
+              export PIP_CACHE_DIR=/work/.cache/pip-cache
+              mkdir -p ${PIP_CACHE_DIR}
+              chown -R "$(id -u):$(id -g)" ${PIP_CACHE_DIR}
+              unset SOURCE_DATE_EPOCH 2>/dev/null || true
+
+              # Fixed TMPDIR for locating AppDir afterwards
+              export TMPDIR=/work/.cache/appdir-tmp
+              rm -rf ${TMPDIR}
+              mkdir -p ${TMPDIR}
+
+              echo "[step] Running python-appimage build app ..."
+
+              set +e
+              python-appimage build app \
+                -p '"${PYTHON_SHORT}"' \
+                -n SGLang \
+                recipe
+              RC=$?
+              set -e
+
+              echo "[step] python-appimage exit code: ${RC}"
+
+              APPDIR=""
+              APPDIR=$(find ${TMPDIR} -maxdepth 3 -name AppDir -type d | head -1)
+
+              if [ ${RC} -eq 0 ] && [ -z "${APPDIR}" ]; then
+                echo "[step] python-appimage succeeded, extracting AppDir ..."
+                AIF=$(ls -t SGLang*.AppImage 2>/dev/null | head -1)
+                if [ -n "${AIF}" ]; then
+                  chmod +x "${AIF}"
+                  APPDIR="${TMPDIR}/AppDir"
+                  "${AIF}" --appimage-extract 2>/dev/null
+                  mv squashfs-root "${APPDIR}"
+                  rm -f "${AIF}"
+                fi
+              fi
+
+              if [ -z "${APPDIR}" ] || [ ! -d "${APPDIR}" ]; then
+                echo "[ERR] AppDir not found" >&2
+                find ${TMPDIR} -type f 2>/dev/null | head -20 || true
+                exit 1
+              fi
+
+              echo "${APPDIR}" > /work/.cache/appdir-path.txt
+              echo "[step] AppDir: ${APPDIR}"
+              echo "[step] AppDir size: $(du -sh ${APPDIR} | cut -f1)"
+            '
+
+      # ── 8) Slim AppDir ──────────────────────────────────
+      - name: Slim AppDir
+        run: |
+          APPDIR_PATH=$(cat .cache/appdir-path.txt)
+
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            "$IMAGE" \
+            bash -lc "bash /work/scripts/slim-appdir.sh '${APPDIR_PATH}'"
+
+      # ── 9) Package AppImage ──────────────────────────────
+      - name: Package AppImage
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            "$IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              APPDIR=$(cat /work/.cache/appdir-path.txt)
+
+              echo "[step] mksquashfs → squashfs.img (zstd -19) ..."
+              rm -f /work/.cache/squashfs.img
+              mksquashfs "${APPDIR}" /work/.cache/squashfs.img \
+                -root-owned -noappend \
+                -comp zstd -Xcompression-level 19
+
+              echo "[step] Concatenating runtime + squashfs → AppImage ..."
+              cat /work/.cache/runtime-x86_64 /work/.cache/squashfs.img > /work/dist/SGLang.AppImage
+              chmod +x /work/dist/SGLang.AppImage
+              rm -f /work/.cache/squashfs.img
+
+              echo "[step] Done"
+            '
+
+          SIZE="$(du -sh dist/SGLang.AppImage | cut -f1)"
+          SGLANG_COMMIT="${{ steps.clone.outputs.sglang_commit }}"
+          echo "Build complete: SGLang.AppImage (${SIZE}, sglang@${SGLANG_COMMIT})"
+
+      # ── 10) Upload to Cloudflare R2 ──────────────────────
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          SGLANG_COMMIT="${{ steps.clone.outputs.sglang_commit }}"
+          PREFIX="${{ inputs.r2_path_prefix }}"
+          DEST="s3://${R2_BUCKET}/${PREFIX}/SGLang-${SGLANG_COMMIT}-x86_64.AppImage"
+
+          echo "Uploading to ${DEST} ..."
+          aws s3 cp dist/SGLang.AppImage "$DEST" \
+            --endpoint-url "$R2_ENDPOINT_URL"
+
+          echo "Upload complete: ${DEST}"
