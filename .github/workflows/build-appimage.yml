@@ -157,7 +157,7 @@ jobs:
                 if [ -n "${AIF}" ]; then
                   chmod +x "${AIF}"
                   APPDIR="${TMPDIR}/AppDir"
-                  "${AIF}" --appimage-extract 2>/dev/null
+                  ./"${AIF}" --appimage-extract 2>/dev/null
                   mv squashfs-root "${APPDIR}"
                   rm -f "${AIF}"
                 fi
