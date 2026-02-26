@@ -93,9 +93,9 @@ $DOCKER run --rm -t \
     cp -f \"\${SGLANG_WHL}\" /work/recipe/
     echo \"  [build] sglang wheel: \${SGLANG_WHL_NAME}\"
 
-    # ── kt-kernel wheel ──
-    echo '  [build] kt-kernel: pip wheel --no-deps ...'
-    pip wheel -v --no-deps -w /work/.cache/wheels /work/.cache/ktransformers-src/kt-kernel/
+    # ── kt-kernel wheel (multi-variant: AVX2/AVX512/AMX) ──
+    echo '  [build] kt-kernel: pip wheel --no-deps (all CPU variants) ...'
+    CPUINFER_BUILD_ALL_VARIANTS=1 pip wheel -v --no-deps -w /work/.cache/wheels /work/.cache/ktransformers-src/kt-kernel/
 
     KT_WHL=\$(ls -t /work/.cache/wheels/kt_kernel-*.whl 2>/dev/null || ls -t /work/.cache/wheels/kt[-_]kernel*.whl | head -1)
     KT_WHL_NAME=\$(basename \"\${KT_WHL}\")
