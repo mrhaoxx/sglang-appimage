@@ -20,7 +20,10 @@ for d in /usr/lib/x86_64-linux-gnu /usr/lib64 /lib/x86_64-linux-gnu; do
   fi
 done
 
-# ── 2) CUDA libs shipped by wheels (torch / nvidia-*) ──────────────
+# ── 2) AppImage bundled system libs (libssl, libcrypto, etc.) ──────
+APPIMAGE_LIBS="${APPDIR}/usr/lib"
+
+# ── 3) CUDA libs shipped by wheels (torch / nvidia-*) ──────────────
 TORCH_LIB="${PY_HOME}/lib/python{{ python-version }}/site-packages/torch/lib"
 NVIDIA_LIB_ROOT="${PY_HOME}/lib/python{{ python-version }}/site-packages/nvidia"
 
@@ -31,9 +34,9 @@ if [ -d "${NVIDIA_LIB_ROOT}" ]; then
   done
 fi
 
-# ── 3) 组装 LD_LIBRARY_PATH ──────────────────────────────────────
-# 顺序：宿主机 libstdc++ → torch/nvidia CUDA libs → 原有 LD_LIBRARY_PATH
-export LD_LIBRARY_PATH="${HOST_LIBS:+${HOST_LIBS}:}${TORCH_LIB}${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}"
+# ── 4) 组装 LD_LIBRARY_PATH ──────────────────────────────────────
+# 顺序：宿主机 libstdc++ → AppImage bundled libs → torch/nvidia CUDA libs → 原有
+export LD_LIBRARY_PATH="${APPIMAGE_LIBS}:${HOST_LIBS:+${HOST_LIBS}:}${TORCH_LIB}${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}"
 
 # Avoid writing bytecode into the mounted AppImage
 export PYTHONDONTWRITEBYTECODE=1

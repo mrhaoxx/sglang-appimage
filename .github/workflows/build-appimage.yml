@@ -7,8 +7,12 @@ on:
         description: "SGLang branch / tag / commit"
         required: false
         default: "main"
+      ktransformers_ref:
+        description: "KTransformers branch / tag / commit"
+        required: false
+        default: "main"
       python_version:
-        description: "Python version (e.g. 3.11)"
+        description: "Python version (e.g. 3.12)"
         required: false
         default: "3.12"
       r2_path_prefix:
@@ -18,7 +22,8 @@ on:
 
 env:
   IMAGE: sglang-appimage-builder
-  SGLANG_REPO: https://github.com/sgl-project/sglang.git
+  SGLANG_REPO: https://github.com/kvcache-ai/sglang.git
+  KTRANSFORMERS_REPO: https://github.com/kvcache-ai/ktransformers.git
 
 jobs:
   build:
@@ -49,9 +54,9 @@ jobs:
       - name: Build Docker image
         run: docker build -t "$IMAGE" -f docker/Dockerfile docker
 
-      # ── 4) Clone sglang source ───────────────────────────
+      # ── 4) Clone sources ─────────────────────────────────
       - name: Clone sglang source
-        id: clone
+        id: clone-sglang
         run: |
           SGLANG_REF="${{ inputs.sglang_ref }}"
           git clone --depth 1 -b "$SGLANG_REF" "$SGLANG_REPO" .cache/sglang-src
@@ -59,10 +64,18 @@ jobs:
           echo "sglang_commit=$SGLANG_COMMIT" >> "$GITHUB_OUTPUT"
           echo "Cloned sglang@${SGLANG_COMMIT}"
 
-      # ── 5) Build sglang wheel ────────────────────────────
-      - name: Build sglang wheel
+      - name: Clone ktransformers source
+        id: clone-kt
         run: |
-          PYTHON_SHORT="${{ inputs.python_version }}"
+          KT_REF="${{ inputs.ktransformers_ref }}"
+          git clone --depth 1 -b "$KT_REF" --recurse-submodules --shallow-submodules "$KTRANSFORMERS_REPO" .cache/ktransformers-src
+          KT_COMMIT="$(git -C .cache/ktransformers-src rev-parse --short HEAD)"
+          echo "kt_commit=$KT_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Cloned ktransformers@${KT_COMMIT}"
+
+      # ── 5) Build wheels ──────────────────────────────────
+      - name: Build sglang + kt-kernel wheels
+        run: |
           mkdir -p dist .cache/uv .cache/pip-cache .cache/python-appimage .cache/wheels
 
           docker run --rm \
@@ -72,18 +85,28 @@ jobs:
             bash -lc "
               set -euo pipefail
 
-              # Clean residual build artifacts
+              # ── sglang wheel ──
               rm -rf /work/.cache/sglang-src/python/build/
-
-              echo '[build] pip wheel --no-deps ...'
+              echo '[build] sglang: pip wheel --no-deps ...'
               pip wheel --no-deps -w /work/.cache/wheels /work/.cache/sglang-src/python/ 2>&1 | tail -5
 
-              WHEEL=\$(ls -t /work/.cache/wheels/sglang-*.whl | head -1)
-              WHEEL_NAME=\$(basename \"\${WHEEL}\")
-              cp -f \"\${WHEEL}\" /work/recipe/
-              echo \"[build] wheel: \${WHEEL_NAME}\"
+              SGLANG_WHL=\$(ls -t /work/.cache/wheels/sglang-*.whl | head -1)
+              SGLANG_WHL_NAME=\$(basename \"\${SGLANG_WHL}\")
+              cp -f \"\${SGLANG_WHL}\" /work/recipe/
+              echo \"[build] sglang wheel: \${SGLANG_WHL_NAME}\"
 
-              echo \"/work/recipe/\${WHEEL_NAME}\" > /work/recipe/requirements.txt
+              # ── kt-kernel wheel ──
+              echo '[build] kt-kernel: pip wheel --no-deps ...'
+              pip wheel --no-deps -w /work/.cache/wheels /work/.cache/ktransformers-src/kt-kernel/ 2>&1 | tail -5
+
+              KT_WHL=\$(ls -t /work/.cache/wheels/kt_kernel-*.whl 2>/dev/null || ls -t /work/.cache/wheels/kt[-_]kernel*.whl | head -1)
+              KT_WHL_NAME=\$(basename \"\${KT_WHL}\")
+              cp -f \"\${KT_WHL}\" /work/recipe/
+              echo \"[build] kt-kernel wheel: \${KT_WHL_NAME}\"
+
+              # ── requirements.txt ──
+              echo \"/work/recipe/\${SGLANG_WHL_NAME}\" > /work/recipe/requirements.txt
+              echo \"/work/recipe/\${KT_WHL_NAME}\" >> /work/recipe/requirements.txt
               echo '[build] requirements.txt:'
               cat /work/recipe/requirements.txt
             "
@@ -211,8 +234,9 @@ jobs:
             '
 
           SIZE="$(du -sh dist/SGLang.AppImage | cut -f1)"
-          SGLANG_COMMIT="${{ steps.clone.outputs.sglang_commit }}"
-          echo "Build complete: SGLang.AppImage (${SIZE}, sglang@${SGLANG_COMMIT})"
+          SGLANG_COMMIT="${{ steps.clone-sglang.outputs.sglang_commit }}"
+          KT_COMMIT="${{ steps.clone-kt.outputs.kt_commit }}"
+          echo "Build complete: SGLang.AppImage (${SIZE}, sglang@${SGLANG_COMMIT} + kt@${KT_COMMIT})"
 
       # ── 10) Upload to Cloudflare R2 ──────────────────────
       - name: Upload to R2
@@ -222,9 +246,10 @@ jobs:
           R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          SGLANG_COMMIT="${{ steps.clone.outputs.sglang_commit }}"
+          SGLANG_COMMIT="${{ steps.clone-sglang.outputs.sglang_commit }}"
+          KT_COMMIT="${{ steps.clone-kt.outputs.kt_commit }}"
           PREFIX="${{ inputs.r2_path_prefix }}"
-          DEST="s3://${R2_BUCKET}/${PREFIX}/SGLang-${SGLANG_COMMIT}-x86_64.AppImage"
+          DEST="s3://${R2_BUCKET}/${PREFIX}/SGLang-${SGLANG_COMMIT}-kt${KT_COMMIT}-x86_64.AppImage"
 
           echo "Uploading to ${DEST} ..."
           aws s3 cp dist/SGLang.AppImage "$DEST" \
