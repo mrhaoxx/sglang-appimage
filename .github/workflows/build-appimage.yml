@@ -12,9 +12,9 @@ on:
         required: false
         default: "main"
       python_version:
-        description: "Python version (e.g. 3.12)"
+        description: "Python version (e.g. 3.11)"
         required: false
-        default: "3.12"
+        default: "3.11"
       r2_path_prefix:
         description: "R2 upload path prefix"
         required: false
@@ -88,7 +88,7 @@ jobs:
               # ── sglang wheel ──
               rm -rf /work/.cache/sglang-src/python/build/
               echo '[build] sglang: pip wheel --no-deps ...'
-              pip wheel --no-deps -w /work/.cache/wheels /work/.cache/sglang-src/python/ 2>&1 | tail -5
+              pip wheel -v --no-deps -w /work/.cache/wheels /work/.cache/sglang-src/python/ 2>&1 | tail -5
 
               SGLANG_WHL=\$(ls -t /work/.cache/wheels/sglang-*.whl | head -1)
               SGLANG_WHL_NAME=\$(basename \"\${SGLANG_WHL}\")
@@ -97,7 +97,7 @@ jobs:
 
               # ── kt-kernel wheel (multi-variant: AVX2/AVX512/AMX) ──
               echo '[build] kt-kernel: pip wheel --no-deps (all CPU variants) ...'
-              CPUINFER_BUILD_ALL_VARIANTS=1 pip wheel --no-deps -w /work/.cache/wheels /work/.cache/ktransformers-src/kt-kernel/ 2>&1 | tail -5
+              CPUINFER_BUILD_ALL_VARIANTS=1 pip wheel -v --no-deps -w /work/.cache/wheels /work/.cache/ktransformers-src/kt-kernel/ 2>&1 | tail -5
 
               KT_WHL=\$(ls -t /work/.cache/wheels/kt_kernel-*.whl 2>/dev/null || ls -t /work/.cache/wheels/kt[-_]kernel*.whl | head -1)
               KT_WHL_NAME=\$(basename \"\${KT_WHL}\")
