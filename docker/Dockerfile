@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-ARG DEBIAN_BASE=debian:trixie-slim
-FROM ${DEBIAN_BASE}
+# Ubuntu 24.04: GCC 13.2 (fixes GCC bug 114098: AMX _tile_loadconfig SIGSEGV)
+#             + glibc 2.39 (compatible with CUDA 12.x; glibc 2.40 breaks nvcc)
+FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -23,8 +24,7 @@ RUN curl -fSL "https://github.com/NixOS/patchelf/releases/download/${PATCHELF_VE
       | tar -xz -C /usr/local && \
     patchelf --version
 
-RUN python3 -m pip install --no-cache-dir --break-system-packages --upgrade pip \
- && python3 -m pip install --no-cache-dir --break-system-packages \
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
       "uv==${UV_VERSION}" \
       "python-appimage==${PYTHON_APPIMAGE_VERSION}" \
       build setuptools wheel setuptools-scm
