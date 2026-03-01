@@ -17,8 +17,16 @@ RUN echo 'source /opt/rh/gcc-toolset-14/enable' > /etc/profile.d/gcc-toolset-14.
 # ── 构建依赖 ─────────────────────────────────────────────────────
 RUN dnf install -y \
       hwloc-devel numactl-devel \
-      squashfs-tools \
+      libzstd-devel \
     && dnf clean all
+
+# ── squashfs-tools 4.6.1 (repo 版 4.3 不支持 zstd) ────────────────
+RUN curl -fSL https://github.com/plougher/squashfs-tools/archive/refs/tags/4.6.1.tar.gz \
+      | tar xz -C /tmp \
+    && make -C /tmp/squashfs-tools-4.6.1/squashfs-tools -j"$(nproc)" \
+      ZSTD_SUPPORT=1 XZ_SUPPORT=1 LZ4_SUPPORT=0 LZO_SUPPORT=0 \
+      install \
+    && rm -rf /tmp/squashfs-tools-4.6.1
 
 # manylinux 镜像自带 cmake, git, curl, patchelf, python 3.8-3.13
 

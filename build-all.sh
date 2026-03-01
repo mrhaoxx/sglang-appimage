@@ -338,9 +338,9 @@ $DOCKER run --rm -t \
     bash /work/scripts/slim-appdir.sh '${APPDIR_PATH}'
   "
 
-# ── 8) 打包 AppImage（mksquashfs xz + runtime）─────────
+# ── 8) 打包 AppImage（mksquashfs zstd + runtime）────────
 echo ""
-echo "[8/8] 打包 AppImage (xz) ..."
+echo "[8/8] 打包 AppImage (zstd -19) ..."
 
 $DOCKER run --rm -t \
   -v "$PWD:/work" \
@@ -350,11 +350,11 @@ $DOCKER run --rm -t \
     set -euo pipefail
     APPDIR=$(cat /work/.cache/appdir-path.txt)
 
-    echo "  [step8] mksquashfs ${APPDIR} → squashfs.img (xz) ..."
+    echo "  [step8] mksquashfs ${APPDIR} → squashfs.img (zstd -19) ..."
     rm -f /work/.cache/squashfs.img
     mksquashfs "${APPDIR}" /work/.cache/squashfs.img \
       -root-owned -noappend \
-      -comp xz
+      -comp zstd -Xcompression-level 19
 
     echo "  [step8] 拼接 runtime + squashfs → AppImage ..."
     cat /work/.cache/runtime-x86_64 /work/.cache/squashfs.img > /work/dist/SGLang.AppImage
