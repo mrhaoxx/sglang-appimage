@@ -185,7 +185,7 @@ $DOCKER run --rm -t \
     # ── kt-kernel wheel (multi-variant: AVX2/AVX512/AMX) ──
     rm -rf /work/.cache/ktransformers-src/kt-kernel/build /work/.cache/ktransformers-src/kt-kernel/kt_kernel.egg-info
     echo '  [build] kt-kernel: pip wheel --no-deps (all CPU variants + CUDA stream API) ...'
-    CPUINFER_BUILD_ALL_VARIANTS=0 CPUINFER_USE_CUDA=1 CPUINFER_CUDA_STATIC_RUNTIME=0 \
+    CPUINFER_BUILD_ALL_VARIANTS=1 CPUINFER_USE_CUDA=1 CPUINFER_CUDA_STATIC_RUNTIME=0 \
       pip wheel -v --no-deps -w /work/.cache/wheels /work/.cache/ktransformers-src/kt-kernel/
 
     KT_WHL=\$(

@@ -1,25 +1,16 @@
 # syntax=docker/dockerfile:1.7
 
-ARG DEBIAN_BASE=debian:bookworm-slim
+ARG DEBIAN_BASE=debian:trixie-slim
 FROM ${DEBIAN_BASE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-
-# (Optional) Freeze apt to a snapshot for stronger reproducibility.
-# Pass e.g. --build-arg DEBIAN_SNAPSHOT=20260201T000000Z
-ARG DEBIAN_SNAPSHOT=""
-RUN if [ -n "${DEBIAN_SNAPSHOT}" ]; then \
-      echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ bookworm main" > /etc/apt/sources.list; \
-      echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/ bookworm-security main" >> /etc/apt/sources.list; \
-      echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ bookworm-updates main" >> /etc/apt/sources.list; \
-    fi
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git xz-utils file \
       python3 python3-dev python3-venv python3-pip \
       squashfs-tools zstd \
       findutils coreutils \
-      cmake make g++ pkg-config libhwloc-dev \
+      cmake make g++ pkg-config libhwloc-dev libnuma-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Pin build tooling versions

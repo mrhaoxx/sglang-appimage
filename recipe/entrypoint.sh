@@ -41,6 +41,32 @@ export LD_LIBRARY_PATH="${APPIMAGE_LIBS}:${HOST_LIBS:+${HOST_LIBS}:}${TORCH_LIB}
 # Avoid writing bytecode into the mounted AppImage
 export PYTHONDONTWRITEBYTECODE=1
 
+# ── 5) JIT 编译环境 (Triton / torch inductor) ────────────────────
+# Triton JIT: 编译 Python DSL → IR → PTX → cubin，需要可写缓存目录
+# torch inductor: torch.compile() 的代码生成后端
+SGLANG_CACHE="${XDG_CACHE_HOME:-${HOME}/.cache}/sglang"
+
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${SGLANG_CACHE}/triton}"
+export TRITON_HOME="${TRITON_HOME:-${SGLANG_CACHE}/triton_home}"
+export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-${SGLANG_CACHE}/torch_extensions}"
+mkdir -p "${TRITON_CACHE_DIR}" "${TORCH_EXTENSIONS_DIR}" 2>/dev/null || true
+
+# Triton 自带 ptxas (PTX → cubin 汇编器)，确保能找到
+TRITON_PTXAS="${PY_HOME}/lib/python{{ python-version }}/site-packages/triton/third_party/cuda/bin/ptxas"
+if [ -x "${TRITON_PTXAS}" ]; then
+  export TRITON_PTXAS_PATH="${TRITON_PTXAS}"
+fi
+
+# torch inductor C++ wrapper: 探测宿主机 g++，没有就自动禁用
+# C++ wrapper 只优化 CPU 端 kernel launch 调度，对 GPU 推理吞吐影响极小
+if [ -z "${TORCHINDUCTOR_CPP_WRAPPER:-}" ]; then
+  if command -v g++ >/dev/null 2>&1; then
+    export TORCHINDUCTOR_CPP_WRAPPER=1
+  else
+    export TORCHINDUCTOR_CPP_WRAPPER=0
+  fi
+fi
+
 # Pass the real Python binary path so multiprocessing spawn works correctly.
 export _SGLANG_REAL_PYTHON="{{ python-executable }}"
 
