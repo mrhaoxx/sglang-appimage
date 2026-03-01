@@ -4,24 +4,30 @@ set -xeu
 APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
 PY_HOME="${APPDIR}/usr"
 
-# ── 1) Host libstdc++ (JIT 编译的 kernel 需要宿主机/conda 的新版) ──
-# AppImage 内置的 manylinux libstdc++ 太旧，缺少 GLIBCXX_3.4.32 等符号。
-# 必须让宿主机的新版 libstdc++ 优先加载。
-HOST_LIBS=""
-# conda 环境优先
-if [ -n "${CONDA_PREFIX:-}" ] && [ -f "${CONDA_PREFIX}/lib/libstdc++.so.6" ]; then
-  HOST_LIBS="${CONDA_PREFIX}/lib"
-fi
-# 系统路径兜底
-for d in /usr/lib/x86_64-linux-gnu /usr/lib64 /lib/x86_64-linux-gnu; do
+# ── 1) libstdc++ 选择 ─────────────────────────────────────────────
+# AppImage 打包了构建时的 libstdc++ (GCC 13, GLIBCXX_3.4.32)。
+# 宿主机可能更旧也可能更新。取两者中较新的那个。
+APPIMAGE_LIBS="${APPDIR}/usr/lib"
+
+HOST_STDCXX=""
+for d in "${CONDA_PREFIX:-}/lib" /usr/lib/x86_64-linux-gnu /usr/lib64 /lib/x86_64-linux-gnu; do
   if [ -f "${d}/libstdc++.so.6" ]; then
-    HOST_LIBS="${HOST_LIBS:+${HOST_LIBS}:}${d}"
+    HOST_STDCXX="${d}"
     break
   fi
 done
 
-# ── 2) AppImage bundled system libs (libssl, libcrypto, etc.) ──────
-APPIMAGE_LIBS="${APPDIR}/usr/lib"
+# 比较 GLIBCXX 最高版本号，决定谁优先
+STDCXX_EXTRA=""
+if [ -n "${HOST_STDCXX}" ]; then
+  BUNDLED_VER=$(strings "${APPIMAGE_LIBS}/libstdc++.so.6" 2>/dev/null | grep '^GLIBCXX_' | sort -V | tail -1)
+  HOST_VER=$(strings "${HOST_STDCXX}/libstdc++.so.6" 2>/dev/null | grep '^GLIBCXX_' | sort -V | tail -1)
+  NEWER=$(printf '%s\n%s\n' "${BUNDLED_VER}" "${HOST_VER}" | sort -V | tail -1)
+  if [ "${NEWER}" = "${HOST_VER}" ] && [ "${HOST_VER}" != "${BUNDLED_VER}" ]; then
+    # 宿主机更新，放前面（JIT 编译的代码可能依赖更新的符号）
+    STDCXX_EXTRA="${HOST_STDCXX}"
+  fi
+fi
 
 # ── 3) CUDA libs shipped by wheels (torch / nvidia-*) ──────────────
 TORCH_LIB="${PY_HOME}/lib/python{{ python-version }}/site-packages/torch/lib"
@@ -35,8 +41,8 @@ if [ -d "${NVIDIA_LIB_ROOT}" ]; then
 fi
 
 # ── 4) 组装 LD_LIBRARY_PATH ──────────────────────────────────────
-# 顺序：宿主机 libstdc++ → AppImage bundled libs → torch/nvidia CUDA libs → 原有
-export LD_LIBRARY_PATH="${APPIMAGE_LIBS}:${HOST_LIBS:+${HOST_LIBS}:}${TORCH_LIB}${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}"
+# 顺序：(宿主机 libstdc++ 如果更新) → AppImage bundled libs → torch/nvidia CUDA libs → 原有
+export LD_LIBRARY_PATH="${STDCXX_EXTRA:+${STDCXX_EXTRA}:}${APPIMAGE_LIBS}:${TORCH_LIB}${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}"
 
 # Avoid writing bytecode into the mounted AppImage
 export PYTHONDONTWRITEBYTECODE=1
