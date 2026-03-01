@@ -17,7 +17,7 @@ RUN echo 'source /opt/rh/gcc-toolset-14/enable' > /etc/profile.d/gcc-toolset-14.
 # ── 构建依赖 ─────────────────────────────────────────────────────
 RUN dnf install -y \
       hwloc-devel numactl-devel \
-      libzstd-devel \
+      libzstd-devel xz-devel \
     && dnf clean all
 
 # ── squashfs-tools 4.6.1 (repo 版 4.3 不支持 zstd) ────────────────
