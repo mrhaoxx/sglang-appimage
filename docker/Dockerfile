@@ -32,6 +32,6 @@ ARG PYTHON_APPIMAGE_VERSION=1.4.5
 RUN pip install --no-cache-dir \
       "uv==${UV_VERSION}" \
       "python-appimage==${PYTHON_APPIMAGE_VERSION}" \
-      build setuptools wheel setuptools-scm
+      build setuptools wheel setuptools-scm auditwheel
 
 WORKDIR /work

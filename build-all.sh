@@ -198,10 +198,21 @@ $DOCKER run --rm -t \
       find /work/.cache/pip-cache/wheels -maxdepth 5 -type f | sed -n '1,120p' >&2 || true
       exit 1
     fi
+
+    # ── auditwheel repair: 把 libhwloc/libnuma/libgomp 等打入 wheel ──
+    echo '  [build] auditwheel repair kt-kernel wheel ...'
+    auditwheel show \"\${KT_WHL}\" || true
+    rm -rf /work/.cache/wheels-repaired
+    mkdir -p /work/.cache/wheels-repaired
+    auditwheel repair \"\${KT_WHL}\" \
+      --plat manylinux_2_28_x86_64 \
+      -w /work/.cache/wheels-repaired/
+
+    KT_WHL=\$(find /work/.cache/wheels-repaired -type f \( -name 'kt_kernel-*.whl' -o -name 'kt-kernel*.whl' \) | head -1)
     KT_WHL_NAME=\$(basename \"\${KT_WHL}\")
 
     cp -f \"\${KT_WHL}\" /work/recipe/
-    echo \"  [build] kt-kernel wheel: \${KT_WHL_NAME}\"
+    echo \"  [build] kt-kernel wheel (repaired): \${KT_WHL_NAME}\"
 
     # ── requirements.txt ──
     echo \"/work/recipe/\${SGLANG_WHL_NAME}\" > /work/recipe/requirements.txt

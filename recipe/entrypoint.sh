@@ -5,9 +5,10 @@ APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
 PY_HOME="${APPDIR}/usr"
 
 # ── 1) libstdc++ 选择 ─────────────────────────────────────────────
-# AppImage 打包了 gcc-toolset-14 的 libstdc++ (GLIBCXX_3.4.33)，
-# 它只依赖 glibc 2.28，在任何现代 Linux 上都能加载。
-# 宿主机可能有更新的 libstdc++（如 GCC 15+），JIT 代码可能需要更新的符号。
+# manylinux_2_28 构建：gcc-toolset-14 通过 libstdc++_nonshared.a 静态链入
+# 新 C++ 符号，运行时只需系统 libstdc++ (GLIBCXX_3.4.25 / GCC 8+)。
+# AppImage 自带 manylinux 的 libstdc++，保底够用。
+# 宿主机可能有更新的 libstdc++，JIT 代码可能需要更新的符号。
 # 策略：比较版本号，取更新的放在 LD_LIBRARY_PATH 前面。
 APPIMAGE_LIBS="${APPDIR}/usr/lib"
 
