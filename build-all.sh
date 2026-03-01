@@ -10,10 +10,15 @@ if ! docker info >/dev/null 2>&1; then
   DOCKER="sudo docker"
 fi
 
-# ── 读取版本配置 ───────────────────────────────────────
-set -a
-source recipe/versions.env
-set +a
+# ── 读取版本配置（环境变量优先，versions.env 作为默认值）──
+while IFS='=' read -r key val; do
+  [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+  val="${val%\"}" ; val="${val#\"}"
+  # 仅在环境变量未设置时使用 versions.env 的值
+  if [ -z "${!key+x}" ]; then
+    export "$key=$val"
+  fi
+done < recipe/versions.env
 
 IMAGE=sglang-appimage-builder
 
@@ -333,9 +338,9 @@ $DOCKER run --rm -t \
     bash /work/scripts/slim-appdir.sh '${APPDIR_PATH}'
   "
 
-# ── 8) 打包 AppImage（mksquashfs zstd + runtime）────────
+# ── 8) 打包 AppImage（mksquashfs xz + runtime）─────────
 echo ""
-echo "[8/8] 打包 AppImage (zstd -19) ..."
+echo "[8/8] 打包 AppImage (xz) ..."
 
 $DOCKER run --rm -t \
   -v "$PWD:/work" \
@@ -345,11 +350,11 @@ $DOCKER run --rm -t \
     set -euo pipefail
     APPDIR=$(cat /work/.cache/appdir-path.txt)
 
-    echo "  [step8] mksquashfs ${APPDIR} → squashfs.img (zstd -19) ..."
+    echo "  [step8] mksquashfs ${APPDIR} → squashfs.img (xz) ..."
     rm -f /work/.cache/squashfs.img
     mksquashfs "${APPDIR}" /work/.cache/squashfs.img \
       -root-owned -noappend \
-      -comp zstd -Xcompression-level 19
+      -comp xz
 
     echo "  [step8] 拼接 runtime + squashfs → AppImage ..."
     cat /work/.cache/runtime-x86_64 /work/.cache/squashfs.img > /work/dist/SGLang.AppImage
