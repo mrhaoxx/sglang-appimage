@@ -1,30 +1,35 @@
 # syntax=docker/dockerfile:1.7
+#
+# 基于 manylinux_2_28 (AlmaLinux 8, glibc 2.28) 构建。
+# 产出的所有 .so 只依赖 glibc 2.28+，可在绝大多数 Linux 发行版上运行。
+#
+# GCC 14 via gcc-toolset-14: 修复了 GCC bug 114098
+#   (_tile_loadconfig 只声明 8 字节内存访问导致 AMX SIGSEGV)
+#
+FROM quay.io/pypa/manylinux_2_28_x86_64
 
-# Ubuntu 24.04: GCC 13.2 (fixes GCC bug 114098: AMX _tile_loadconfig SIGSEGV)
-#             + glibc 2.39 (compatible with CUDA 12.x; glibc 2.40 breaks nvcc)
-FROM ubuntu:24.04
+# ── GCC 14 (AMX _tile_loadconfig fix) ────────────────────────────
+RUN dnf install -y gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
+    && dnf clean all
+# 写入 profile.d 使 bash -l 自动启用
+RUN echo 'source /opt/rh/gcc-toolset-14/enable' > /etc/profile.d/gcc-toolset-14.sh
 
-ARG DEBIAN_FRONTEND=noninteractive
+# ── 构建依赖 ─────────────────────────────────────────────────────
+RUN dnf install -y \
+      hwloc-devel numactl-devel \
+      squashfs-tools \
+    && dnf clean all
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git xz-utils file \
-      python3 python3-dev python3-venv python3-pip \
-      squashfs-tools zstd \
-      findutils coreutils \
-      cmake make g++ pkg-config libhwloc-dev libnuma-dev \
-    && rm -rf /var/lib/apt/lists/*
+# manylinux 镜像自带 cmake, git, curl, patchelf, python 3.8-3.13
 
-# Pin build tooling versions
+# ── Python 构建工具 ──────────────────────────────────────────────
+# 使用 manylinux 自带的 Python 3.12
+ENV PATH="/opt/python/cp312-cp312/bin:${PATH}"
+
 ARG UV_VERSION=0.8.22
 ARG PYTHON_APPIMAGE_VERSION=1.4.5
 
-# Install patchelf 0.18+ (needed for --page-size to fix ELF alignment in AppImage)
-ARG PATCHELF_VERSION=0.18.0
-RUN curl -fSL "https://github.com/NixOS/patchelf/releases/download/${PATCHELF_VERSION}/patchelf-${PATCHELF_VERSION}-x86_64.tar.gz" \
-      | tar -xz -C /usr/local && \
-    patchelf --version
-
-RUN python3 -m pip install --no-cache-dir --break-system-packages \
+RUN pip install --no-cache-dir \
       "uv==${UV_VERSION}" \
       "python-appimage==${PYTHON_APPIMAGE_VERSION}" \
       build setuptools wheel setuptools-scm

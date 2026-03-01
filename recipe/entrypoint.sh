@@ -5,8 +5,10 @@ APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
 PY_HOME="${APPDIR}/usr"
 
 # ── 1) libstdc++ 选择 ─────────────────────────────────────────────
-# AppImage 打包了构建时的 libstdc++ (GCC 13, GLIBCXX_3.4.32)。
-# 宿主机可能更旧也可能更新。取两者中较新的那个。
+# AppImage 打包了 gcc-toolset-14 的 libstdc++ (GLIBCXX_3.4.33)，
+# 它只依赖 glibc 2.28，在任何现代 Linux 上都能加载。
+# 宿主机可能有更新的 libstdc++（如 GCC 15+），JIT 代码可能需要更新的符号。
+# 策略：比较版本号，取更新的放在 LD_LIBRARY_PATH 前面。
 APPIMAGE_LIBS="${APPDIR}/usr/lib"
 
 HOST_STDCXX=""
@@ -18,18 +20,21 @@ for d in "${CONDA_PREFIX:-}/lib" /usr/lib/x86_64-linux-gnu /usr/lib64 /lib/x86_6
 done
 
 # 比较 GLIBCXX 最高版本号，决定谁优先
+# 注意：只匹配 GLIBCXX_x.y.z 格式，排除 GLIBCXX_DEBUG / GLIBCXX_TUNABLES 等
 STDCXX_EXTRA=""
 if [ -n "${HOST_STDCXX}" ]; then
-  BUNDLED_VER=$(strings "${APPIMAGE_LIBS}/libstdc++.so.6" 2>/dev/null | grep '^GLIBCXX_' | sort -V | tail -1)
-  HOST_VER=$(strings "${HOST_STDCXX}/libstdc++.so.6" 2>/dev/null | grep '^GLIBCXX_' | sort -V | tail -1)
-  NEWER=$(printf '%s\n%s\n' "${BUNDLED_VER}" "${HOST_VER}" | sort -V | tail -1)
-  if [ "${NEWER}" = "${HOST_VER}" ] && [ "${HOST_VER}" != "${BUNDLED_VER}" ]; then
-    # 宿主机更新，放前面（JIT 编译的代码可能依赖更新的符号）
-    STDCXX_EXTRA="${HOST_STDCXX}"
+  BUNDLED_VER=$(strings "${APPIMAGE_LIBS}/libstdc++.so.6" 2>/dev/null | grep -E '^GLIBCXX_[0-9]+\.' | sort -V | tail -1 || echo "")
+  HOST_VER=$(strings "${HOST_STDCXX}/libstdc++.so.6" 2>/dev/null | grep -E '^GLIBCXX_[0-9]+\.' | sort -V | tail -1 || echo "")
+  if [ -n "${HOST_VER}" ] && [ -n "${BUNDLED_VER}" ]; then
+    NEWER=$(printf '%s\n%s\n' "${BUNDLED_VER}" "${HOST_VER}" | sort -V | tail -1)
+    if [ "${NEWER}" = "${HOST_VER}" ] && [ "${HOST_VER}" != "${BUNDLED_VER}" ]; then
+      # 宿主机更新，放前面（JIT 编译的代码可能依赖更新的符号）
+      STDCXX_EXTRA="${HOST_STDCXX}"
+    fi
   fi
 fi
 
-# ── 3) CUDA libs shipped by wheels (torch / nvidia-*) ──────────────
+# ── 2) CUDA libs shipped by wheels (torch / nvidia-*) ──────────────
 TORCH_LIB="${PY_HOME}/lib/python{{ python-version }}/site-packages/torch/lib"
 NVIDIA_LIB_ROOT="${PY_HOME}/lib/python{{ python-version }}/site-packages/nvidia"
 
@@ -40,14 +45,14 @@ if [ -d "${NVIDIA_LIB_ROOT}" ]; then
   done
 fi
 
-# ── 4) 组装 LD_LIBRARY_PATH ──────────────────────────────────────
+# ── 3) 组装 LD_LIBRARY_PATH ──────────────────────────────────────
 # 顺序：(宿主机 libstdc++ 如果更新) → AppImage bundled libs → torch/nvidia CUDA libs → 原有
 export LD_LIBRARY_PATH="${STDCXX_EXTRA:+${STDCXX_EXTRA}:}${APPIMAGE_LIBS}:${TORCH_LIB}${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}"
 
 # Avoid writing bytecode into the mounted AppImage
 export PYTHONDONTWRITEBYTECODE=1
 
-# ── 5) JIT 编译环境 (Triton / torch inductor) ────────────────────
+# ── 4) JIT 编译环境 (Triton / torch inductor) ────────────────────
 # Triton JIT: 编译 Python DSL → IR → PTX → cubin，需要可写缓存目录
 # torch inductor: torch.compile() 的代码生成后端
 SGLANG_CACHE="${XDG_CACHE_HOME:-${HOME}/.cache}/sglang"
