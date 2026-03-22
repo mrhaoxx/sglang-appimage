@@ -94,8 +94,8 @@ $DOCKER run --rm -t \
     mkdir -p \"\${PIP_CACHE_DIR}\" /work/.cache/cuda-toolkit/python
 
     # 清理旧产物，避免挑到历史 wheel
-    rm -f /work/.cache/wheels/sglang-*.whl /work/.cache/wheels/kt_kernel-*.whl /work/.cache/wheels/kt-kernel*.whl 2>/dev/null || true
-    rm -f /work/recipe/sglang-*.whl /work/recipe/kt_kernel-*.whl /work/recipe/kt-kernel*.whl 2>/dev/null || true
+    rm -f /work/.cache/wheels/sglang*.whl /work/.cache/wheels/kt_kernel-*.whl /work/.cache/wheels/kt-kernel*.whl 2>/dev/null || true
+    rm -f /work/recipe/sglang*.whl /work/recipe/kt_kernel-*.whl /work/recipe/kt-kernel*.whl 2>/dev/null || true
 
     # ── CUDA toolkit cache（从 NVIDIA .run 大包安装，挂载到 /work/.cache） ──
     CUDA_CACHE_ROOT=/work/.cache/cuda-toolkit
@@ -175,11 +175,11 @@ $DOCKER run --rm -t \
     pip wheel --no-deps -w /work/.cache/wheels /work/.cache/sglang-src/python/ 2>&1 | tail -5
 
     SGLANG_WHL=\$(
-      find /work/.cache/wheels -maxdepth 1 -type f -name 'sglang-*.whl' -printf '%T@ %p\n' 2>/dev/null \
+      find /work/.cache/wheels -maxdepth 1 -type f -name 'sglang*.whl' -printf '%T@ %p\n' 2>/dev/null \
         | sort -nr | head -1 | cut -d' ' -f2- || true
     )
     if [ -z \"\${SGLANG_WHL}\" ]; then
-      echo '[ERR] 未找到 sglang wheel（/work/.cache/wheels/sglang-*.whl）。' >&2
+      echo '[ERR] 未找到 sglang wheel（/work/.cache/wheels/sglang*.whl）。' >&2
       find /work/.cache/wheels -maxdepth 2 -type f | sed -n '1,120p' >&2 || true
       exit 1
     fi
